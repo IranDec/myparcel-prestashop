@@ -5,13 +5,15 @@ class SadrCodApiClient
     private $username;
     private $password;
     private $token;
+    private $id_shop;
     private $apiUrl = 'http://sadrcod.com/api';
     private $wsUrl = 'http://sadrcod.com/ws/v005';
 
-    public function __construct($username, $password)
+    public function __construct($username, $password, $id_shop)
     {
         $this->username = $username;
         $this->password = $password;
+        $this->id_shop = $id_shop;
     }
 
     private function getAuthenticationToken()
@@ -78,14 +80,15 @@ class SadrCodApiClient
             ];
         }
 
-        $packagingWeight = (int)Configuration::get('SADRCOD_PACKAGING_WEIGHT', 100);
+        $packagingWeight = (int)Configuration::get('SADRCOD_PACKAGING_WEIGHT', null, null, $this->id_shop);
+        $destinationCityCode = $this->getCityCodeFromAddress($address);
 
         return array(
             'products' => $products,
             'deliveryType' => 0,
             'packagingWeight' => $packagingWeight,
             'prepayment' => (int)$order->total_paid_tax_incl,
-            'destinationCityCode' => '1', // This might need to be dynamic
+            'destinationCityCode' => $destinationCityCode,
             'customerName' => $address->firstname . ' ' . $address->lastname,
             'customerAddress' => $address->address1 . ' ' . $address->address2,
             'customerPostalCode' => $address->postcode,
@@ -97,6 +100,51 @@ class SadrCodApiClient
             'discountTax' => false,
             'inCash' => ($order->module == 'ps_cashondelivery')
         );
+    }
+
+    private function getCityCodeFromAddress(Address $address)
+    {
+        $stateName = State::getNameById($address->id_state);
+
+        $stateMap = [
+            'آذربایجان شرقی' => '41', 'آذربايجان شرقي' => '41',
+            'آذربایجان غربی' => '44', 'آذربايجان غربي' => '44',
+            'اردبیل' => '45',
+            'اصفهان' => '31',
+            'البرز' => '26',
+            'ایلام' => '84',
+            'بوشهر' => '77',
+            'تهران' => '21',
+            'چهارمحال و بختیاری' => '38',
+            'خراسان جنوبی' => '56',
+            'خراسان رضوی' => '51',
+            'خراسان شمالی' => '58',
+            'خوزستان' => '61',
+            'زنجان' => '24',
+            'سمنان' => '23',
+            'سیستان و بلوچستان' => '54',
+            'فارس' => '71',
+            'قزوین' => '28',
+            'قم' => '25',
+            'کردستان' => '87',
+            'کرمان' => '34',
+            'کرمانشاه' => '83',
+            'کهگیلویه و بویراحمد' => '74',
+            'گلستان' => '17',
+            'گیلان' => '13',
+            'لرستان' => '66',
+            'مازندران' => '11',
+            'مرکزی' => '86',
+            'هرمزگان' => '76',
+            'همدان' => '81',
+            'یزد' => '35',
+        ];
+
+        if ($stateName && isset($stateMap[$stateName])) {
+            return $stateMap[$stateName];
+        }
+
+        return Configuration::get('SADRCOD_DEFAULT_CITY_CODE', null, null, $this->id_shop);
     }
 
 
@@ -124,7 +172,6 @@ class SadrCodApiClient
 
         curl_setopt($curl, CURLOPT_URL, $url);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        // Add a timeout to prevent long waits
         curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 5);
         curl_setopt($curl, CURLOPT_TIMEOUT, 15);
 

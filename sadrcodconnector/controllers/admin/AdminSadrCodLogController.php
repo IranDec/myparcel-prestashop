@@ -89,6 +89,10 @@ class AdminSadrCodLogController extends ModuleAdminController
     {
         // Remove add new button
         $this->toolbar_btn = array();
-        return parent::renderList();
+        $list = parent::renderList();
+
+        $footer = $this->context->smarty->fetch(_PS_MODULE_DIR_ . $this->module->name . '/views/templates/admin/footer.tpl');
+
+        return $list . $footer;
     }
 }

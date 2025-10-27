@@ -15,7 +15,8 @@ class SadrCodConnector extends Module
         $this->name = 'sadrcodconnector';
         $this->tab = 'shipping_logistics';
         $this->version = '1.0.0';
-        $this->author = 'Jules';
+        $this->author = 'Mohammad Babaei';
+        $this->author_uri = 'https://adschi.com';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7.0.0', 'max' => '1.7.99.99');
         $this->bootstrap = true;
@@ -27,13 +28,18 @@ class SadrCodConnector extends Module
 
     public function install()
     {
+        if (Shop::isFeatureActive()) {
+            Shop::setContext(Shop::CONTEXT_ALL);
+        }
+
         if (!parent::install() ||
             !$this->registerHook('actionOrderStatusUpdate') ||
             !$this->installTab()
         ) {
             return false;
         }
-        Configuration::updateValue('SADRCOD_PACKAGING_WEIGHT', 100);
+
+        // Default values will be set per shop
         return $this->installDb();
     }
 
@@ -43,6 +49,7 @@ class SadrCodConnector extends Module
         Configuration::deleteByName('SADRCOD_PASSWORD');
         Configuration::deleteByName('SADRCOD_TARGET_STATES');
         Configuration::deleteByName('SADRCOD_PACKAGING_WEIGHT');
+        Configuration::deleteByName('SADRCOD_DEFAULT_CITY_CODE');
         return $this->uninstallDb() && $this->uninstallTab() && parent::uninstall();
     }
 
@@ -102,20 +109,25 @@ class SadrCodConnector extends Module
             $password = Tools::getValue('SADRCOD_PASSWORD');
             $states = Tools::getValue('SADRCOD_TARGET_STATES');
             $weight = Tools::getValue('SADRCOD_PACKAGING_WEIGHT');
+            $city_code = Tools::getValue('SADRCOD_DEFAULT_CITY_CODE');
 
             if (!$username) {
                 $output .= $this->displayError($this->l('Username is required.'));
             } else {
-                Configuration::updateValue('SADRCOD_USERNAME', $username);
+                $id_shop_group = Shop::getContextShopGroupID();
+                $id_shop = Shop::getContextShopID();
+
+                Configuration::updateValue('SADRCOD_USERNAME', $username, false, $id_shop_group, $id_shop);
                 if ($password) {
-                    Configuration::updateValue('SADRCOD_PASSWORD', $password);
+                    Configuration::updateValue('SADRCOD_PASSWORD', $password, false, $id_shop_group, $id_shop);
                 }
-                Configuration::updateValue('SADRCOD_TARGET_STATES', json_encode(is_array($states) ? array_map('intval', $states) : []));
-                Configuration::updateValue('SADRCOD_PACKAGING_WEIGHT', (int)$weight);
+                Configuration::updateValue('SADRCOD_TARGET_STATES', json_encode(is_array($states) ? array_map('intval', $states) : []), false, $id_shop_group, $id_shop);
+                Configuration::updateValue('SADRCOD_PACKAGING_WEIGHT', (int)$weight, false, $id_shop_group, $id_shop);
+                Configuration::updateValue('SADRCOD_DEFAULT_CITY_CODE', $city_code, false, $id_shop_group, $id_shop);
                 $output .= $this->displayConfirmation($this->l('Settings updated successfully.'));
             }
         }
-        return $output . $this->renderForm();
+        return $output . $this->renderForm() . $this->renderFooter();
     }
 
     public function renderForm()
@@ -161,6 +173,14 @@ class SadrCodConnector extends Module
                     'class' => 'fixed-width-sm',
                     'suffix' => 'grams'
                 ),
+                array(
+                    'type' => 'text',
+                    'label' => $this->l('Default Destination City Code'),
+                    'name' => 'SADRCOD_DEFAULT_CITY_CODE',
+                    'required' => true,
+                    'class' => 'fixed-width-sm',
+                    'desc' => $this->l('Enter the default city code for SadrCod API (e.g., 1 for Tehran).')
+                ),
             ),
             'submit' => array(
                 'title' => $this->l('Save'),
@@ -187,12 +207,17 @@ class SadrCodConnector extends Module
 
     public function getConfigFieldsValues()
     {
-        $states = Configuration::get('SADRCOD_TARGET_STATES');
+        $id_shop_group = Shop::getContextShopGroupID();
+        $id_shop = Shop::getContextShopID();
+
+        $states = Configuration::get('SADRCOD_TARGET_STATES', null, $id_shop_group, $id_shop);
+
         return array(
-            'SADRCOD_USERNAME' => Tools::getValue('SADRCOD_USERNAME', Configuration::get('SADRCOD_USERNAME')),
+            'SADRCOD_USERNAME' => Tools::getValue('SADRCOD_USERNAME', Configuration::get('SADRCOD_USERNAME', null, $id_shop_group, $id_shop)),
             'SADRCOD_PASSWORD' => '', // Always empty for security
             'SADRCOD_TARGET_STATES[]' => Tools::getValue('SADRCOD_TARGET_STATES', json_decode($states, true)),
-            'SADRCOD_PACKAGING_WEIGHT' => Tools::getValue('SADRCOD_PACKAGING_WEIGHT', Configuration::get('SADRCOD_PACKAGING_WEIGHT')),
+            'SADRCOD_PACKAGING_WEIGHT' => Tools::getValue('SADRCOD_PACKAGING_WEIGHT', Configuration::get('SADRCOD_PACKAGING_WEIGHT', null, $id_shop_group, $id_shop)),
+            'SADRCOD_DEFAULT_CITY_CODE' => Tools::getValue('SADRCOD_DEFAULT_CITY_CODE', Configuration::get('SADRCOD_DEFAULT_CITY_CODE', null, $id_shop_group, $id_shop)),
         );
     }
 
@@ -202,40 +227,41 @@ class SadrCodConnector extends Module
             return;
         }
 
-        $newOrderState = $params['newOrderStatus'];
-        $id_order = (int)$params['id_order'];
+        $order = new Order((int)$params['id_order']);
+        $id_shop = (int)$order->id_shop;
 
-        $targetStates = json_decode(Configuration::get('SADRCOD_TARGET_STATES') ?: '[]', true);
+        $newOrderState = $params['newOrderStatus'];
+
+        $targetStates = json_decode(Configuration::get('SADRCOD_TARGET_STATES', null, null, $id_shop) ?: '[]', true);
 
         if (!is_array($targetStates) || !in_array($newOrderState->id, $targetStates)) {
             return;
         }
 
-        $log_entry = Db::getInstance()->getRow('SELECT `status` FROM `'._DB_PREFIX_.self::LOG_TABLE.'` WHERE `id_order` = '.(int)$id_order." AND `status` = 'done'");
+        $log_entry = Db::getInstance()->getRow('SELECT `status` FROM `'._DB_PREFIX_.self::LOG_TABLE.'` WHERE `id_order` = '.(int)$order->id." AND `status` = 'done'");
         if ($log_entry) {
-            PrestaShopLogger::addLog(sprintf('SadrCodConnector: Order %d has already been successfully sent. Skipping.', $id_order), 1, null, 'Order', $id_order);
+            PrestaShopLogger::addLog(sprintf('SadrCodConnector: Order %d has already been successfully sent. Skipping.', $order->id), 1, null, 'Order', $order->id);
             return;
         }
 
-        $username = Configuration::get('SADRCOD_USERNAME');
-        $password = Configuration::get('SADRCOD_PASSWORD');
+        $username = Configuration::get('SADRCOD_USERNAME', null, null, $id_shop);
+        $password = Configuration::get('SADRCOD_PASSWORD', null, null, $id_shop);
 
         if (empty($username) || empty($password)) {
-            PrestaShopLogger::addLog('SadrCodConnector: API credentials are not configured.', 3, null, 'Module', $this->id);
+            PrestaShopLogger::addLog('SadrCodConnector: API credentials are not configured for shop ' . $id_shop, 3, null, 'Module', $this->id);
             return;
         }
 
         try {
-            $apiClient = new SadrCodApiClient($username, $password);
-            $order = new Order($id_order);
+            $apiClient = new SadrCodApiClient($username, $password, $id_shop);
 
             $this->addOrUpdateLog($order, 'pending', '', '');
             $response = $apiClient->registerPackage($order);
             $this->processApiResponse($response, $order);
 
         } catch (Exception $e) {
-            PrestaShopLogger::addLog('SadrCodConnector: Exception caught: ' . $e->getMessage(), 3, null, 'Order', $id_order);
-            $this->addOrUpdateLog(new Order($id_order), 'error', '', $e->getMessage());
+            PrestaShopLogger::addLog('SadrCodConnector: Exception caught: ' . $e->getMessage(), 3, null, 'Order', $order->id);
+            $this->addOrUpdateLog($order, 'error', '', $e->getMessage());
         }
     }
 
@@ -302,5 +328,16 @@ class SadrCodConnector extends Module
             'order_reference' => $order->reference,
             'customer_name' => $customer->firstname . ' ' . $customer->lastname
         ));
+    }
+
+    private function renderFooter()
+    {
+        $this->context->smarty->assign(array(
+            'module_name' => $this->displayName,
+            'module_version' => $this->version,
+            'author_name' => $this->author,
+            'author_uri' => $this->author_uri,
+        ));
+        return $this->display(__FILE__, 'views/templates/admin/footer.tpl');
     }
 }
