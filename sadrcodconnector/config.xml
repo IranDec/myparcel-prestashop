@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+    <name>sadrcodconnector</name>
+    <displayName><![CDATA[SadrCod Connector]]></displayName>
+    <version><![CDATA[1.0.0]]></version>
+    <author><![CDATA[Mohammad Babaei]]></author>
+    <author_uri><![CDATA[https://adschi.com]]></author_uri>
+    <tab><![CDATA[shipping_logistics]]></tab>
+    <is_configurable>1</is_configurable>
+    <need_instance>1</need_instance>
+    <ps_versions_compliancy>
+        <min><![CDATA[1.7.0.0]]></min>
+        <max><![CDATA[1.7.99.99]]></max>
+    </ps_versions_compliancy>
+    <description><![CDATA[ارسال سفارشات به API پست صدرکد و دریافت کد رهگیری.]]></description>
+    <confirmUninstall><![CDATA[Are you sure you want to uninstall? This will delete all settings and logs.]]></confirmUninstall>
+</module>
