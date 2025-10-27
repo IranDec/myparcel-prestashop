@@ -1,3 +1,85 @@
+# SadrCod Connector for PrestaShop
+
+**Version:** 1.0.0
+**Author:** Mohammad Babaei - [AdsChi.com](https://adschi.com)
+**Compatibility:** PrestaShop 1.7.x
+
+## Overview
+
+This module seamlessly integrates your PrestaShop store with the **SadrCod** postal web service. It automates the process of registering orders with the shipping provider, retrieving tracking numbers, and saving them to the corresponding customer orders.
+
+### Key Features
+
+-   **Automatic Order Submission**: Automatically sends order details to the SadrCod API as soon as an order's status is updated to a configurable state (e.g., "Processing in progress").
+-   **Full Multi-Store Support**: Each store can have its own unique API settings and submission rules, making it fully compatible with a multi-store environment.
+-   **Tracking Number Integration**: Fetches the tracking number upon successful submission and saves it to the order's shipping details, making it visible to the customer.
+-   **Dynamic Destination City Codes**: Intelligently maps the order's destination state/province to the required API city code, using a configurable default for unmatched locations.
+-   **Advanced Logging**: Logs every API request (successful or failed) in a dedicated page in the PrestaShop back office for easy monitoring and debugging.
+-   **Print Label Ready**: If the API response includes a URL for a shipping label, a "Print" button is made available in the log report.
+-   **SMS Integration Hook**: Provides a standard PrestaShop hook (`actionSadrCodSendSms`) to allow any SMS module to send the tracking number to the customer.
+
+---
+
+## Installation and Configuration
+
+### 1. Installation
+
+1.  Download the latest version of the module from the repository.
+2.  Upload the `sadrcodconnector` folder to your PrestaShop `modules/` directory.
+3.  Log in to your PrestaShop back office and navigate to **Modules > Module Manager**.
+4.  Find the **SadrCod Connector** module in the list and click **Install**.
+
+### 2. Configuration
+
+After installation, click **Configure** to access the module's settings page.
+
+-   **Username**: Enter your SadrCod API username.
+-   **Password**: Enter your SadrCod API password. (For security, this field will be blank after saving).
+-   **Target Order States**: Select one or more order statuses. When an order is updated to any of these statuses, it will be sent to SadrCod.
+-   **Default Packaging Weight (grams)**: Enter the weight of your standard packaging material (e.g., box, envelope) in grams. This will be added to the total weight of the products.
+-   **Default Destination City Code**: Enter a default city code from the SadrCod API list (e.g., `1` for Tehran). This code will be used if the module cannot determine the customer's state.
+
+**Important Note for Multi-Store Users**: If you are running multiple shops, use the store selector at the top of the page to configure the module for each shop individually.
+
+---
+
+## Usage
+
+### Log Report
+
+To view the status of submitted orders, go to **Orders > SadrCod Logs** in your back office menu. This page displays a complete list of submissions, their status (success/error), tracking number, and the date of the attempt.
+
+### SMS Integration (For Developers)
+
+This module does not send SMS messages directly. Instead, it provides a custom hook named `actionSadrCodSendSms` for maximum flexibility. You can integrate your existing SMS module by making it listen to this hook.
+
+**Hook Parameters:**
+
+-   `mobile_phone` (string): The customer's mobile phone number.
+-   `tracking_number` (string): The shipping tracking number.
+-   `order_reference` (string): The order reference code.
+-   `customer_name` (string): The customer's full name.
+
+**Example Usage in an SMS Module:**
+
+```php
+public function hookActionSadrCodSendSms($params)
+{
+    $mobile = $params['mobile_phone'];
+    $tracking = $params['tracking_number'];
+    $reference = $params['order_reference'];
+    $name = $params['customer_name'];
+
+    $message = "Dear {$name}, your order {$reference} has been shipped. Tracking number: {$tracking}";
+
+    // Your SMS sending logic here...
+    // Example: YourSmsClass::send($mobile, $message);
+}
+```
+
+---
+<br>
+
 # ماژول اتصال پرستاشاپ به صدرکد (SadrCod Connector)
 
 **نسخه:** 1.0.0
